@@ -22,7 +22,10 @@ public class RoomsService {
 
     public Room createRoom(CreateRoomRequestVO requestVO) {
         String roomId = requestVO.getRoomId();
-        findRoomById(roomId);
+        Optional<Room> roomById = findRoomById(roomId);
+        if (roomById.isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Room with Id " + roomId + " already exists");
+        }
 
         Room newRoom = new Room();
         newRoom.setRoomId(roomId);
@@ -31,7 +34,10 @@ public class RoomsService {
         return roomsRepository.save(newRoom);
     }
 
-    public Room findRoomById(String roomId) {
+    public Optional<Room> findRoomById(String roomId) {
+        return roomsRepository.findByRoomId(roomId);
+    }
+    public Room findRoomByIdOrElseThrow(String roomId) {
         return roomsRepository.findByRoomId(roomId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found with Id " + roomId));
     }
@@ -41,7 +47,7 @@ public class RoomsService {
     }
 
     public List<Message> getMessagesByRoomId(String roomId, int pageNo, int pageSize) {
-        Room room = findRoomById(roomId);
+        Room room = findRoomByIdOrElseThrow(roomId);
 
         // Message Pagination
         List<Message> messages = room.getMessages();

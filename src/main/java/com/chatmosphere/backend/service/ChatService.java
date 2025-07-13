@@ -15,7 +15,7 @@ public class ChatService {
     private final RoomsService roomsService;
 
     public Message sendMessages(MessageRequest messageRequest) {
-        Room room = roomsService.findRoomById(messageRequest.getRoomId());
+        Room room = roomsService.findRoomByIdOrElseThrow(messageRequest.getRoomId());
 
         Message message = new Message();
         message.setSenderId(messageRequest.getSenderId());

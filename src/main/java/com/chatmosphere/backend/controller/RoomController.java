@@ -13,7 +13,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("api/v1/rooms/")
-@CrossOrigin("https://localhost:3000")
+@CrossOrigin("http://localhost:5173")
 @RequiredArgsConstructor
 public class RoomController {
 
@@ -27,7 +27,7 @@ public class RoomController {
 
     @GetMapping("{roomId}")
     public ResponseEntity<?> getRoomById(@PathVariable(name = "roomId") String roomId) {
-        Room room = roomsService.findRoomById(roomId);
+        Room room = roomsService.findRoomByIdOrElseThrow(roomId);
         return new ResponseEntity<>(room, HttpStatus.OK);
     }
 
