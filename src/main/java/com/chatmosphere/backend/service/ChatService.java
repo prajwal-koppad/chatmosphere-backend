@@ -3,13 +3,13 @@ package com.chatmosphere.backend.service;
 import com.chatmosphere.backend.documents.Message;
 import com.chatmosphere.backend.documents.Room;
 import com.chatmosphere.backend.model.MessageRequest;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class ChatService {
 
     private final RoomsService roomsService;
