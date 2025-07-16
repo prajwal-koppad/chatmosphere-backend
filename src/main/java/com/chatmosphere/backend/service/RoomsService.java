@@ -10,8 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -46,7 +46,7 @@ public class RoomsService {
         return roomsRepository.save(room);
     }
 
-    public List<Message> getMessagesByRoomId(String roomId, int pageNo, int pageSize) {
+    public Map<String, Object> getMessagesByRoomId(String roomId, int pageNo, int pageSize) {
         Room room = findRoomByIdOrElseThrow(roomId);
 
         // Message Pagination
@@ -54,6 +54,6 @@ public class RoomsService {
         int start = Math.max(0, messages.size() - (pageNo + 1) * pageSize);
         int end = Math.min(messages.size(), start + pageSize);
 
-        return messages.subList(start, end);
+        return Map.of("messages", messages.subList(start, end), "totalMessages", messages.size());
     }
 }

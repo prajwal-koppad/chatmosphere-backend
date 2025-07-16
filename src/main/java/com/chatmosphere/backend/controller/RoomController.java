@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("api/v1/rooms/")
@@ -32,10 +33,10 @@ public class RoomController {
     }
 
     @GetMapping("{roomId}/messages")
-    public ResponseEntity<List<Message>> getMessagesById(@PathVariable(name = "roomId") String roomId,
-                                                       @RequestParam(name = "pageNo", defaultValue = "0", required = false) int pageNumber,
-                                                       @RequestParam(name = "pageSize", defaultValue = "20", required = false) int pageSize) {
-        List<Message> messages = roomsService.getMessagesByRoomId(roomId, pageNumber, pageSize);
+    public ResponseEntity<Map<String, Object>> getMessagesById(@PathVariable(name = "roomId") String roomId,
+                                                               @RequestParam(name = "pageNo", defaultValue = "0", required = false) int pageNumber,
+                                                               @RequestParam(name = "pageSize", defaultValue = "20", required = false) int pageSize) {
+        Map<String, Object> messages = roomsService.getMessagesByRoomId(roomId, pageNumber, pageSize);
         return new ResponseEntity<>(messages, HttpStatus.OK);
     }
 }
