@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,7 +31,7 @@ public class RoomsService {
         Room newRoom = new Room();
         newRoom.setRoomId(roomId);
         newRoom.setRoomName(requestVO.getRoomName());
-        newRoom.setCreateDate(LocalDateTime.now());
+        newRoom.setCreateDate(LocalDateTime.now(ZoneOffset.UTC));
         return roomsRepository.save(newRoom);
     }
 

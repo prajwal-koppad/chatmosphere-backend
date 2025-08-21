@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Service
 @RequiredArgsConstructor
@@ -20,7 +21,7 @@ public class ChatService {
         Message message = new Message();
         message.setSenderId(messageRequest.getSenderId());
         message.setContent(messageRequest.getMessageContent());
-        message.setSentAt(LocalDateTime.now());
+        message.setSentAt(LocalDateTime.now(ZoneOffset.UTC));
 
         room.getMessages().add(message);
         roomsService.saveRoom(room);
