@@ -1,8 +1,9 @@
 package com.chatmosphere.backend.service;
 
 import com.chatmosphere.backend.documents.Message;
-import com.chatmosphere.backend.documents.Room;
+import com.chatmosphere.backend.dto.MessageDTO;
 import com.chatmosphere.backend.model.MessageRequest;
+import com.chatmosphere.backend.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -14,17 +15,19 @@ import java.time.ZoneOffset;
 public class ChatService {
 
     private final RoomsService roomsService;
+    private final MessageRepository messageRepository;
 
-    public Message sendMessages(MessageRequest messageRequest) {
-        Room room = roomsService.findRoomByIdOrElseThrow(messageRequest.getRoomId());
+    public MessageDTO sendMessages(MessageRequest messageRequest) {
+        // Validate room exists
+        roomsService.findRoomByIdOrElseThrow(messageRequest.getRoomId());
 
         Message message = new Message();
+        message.setRoomId(messageRequest.getRoomId());
         message.setSenderId(messageRequest.getSenderId());
         message.setContent(messageRequest.getMessageContent());
         message.setSentAt(LocalDateTime.now(ZoneOffset.UTC));
 
-        room.getMessages().add(message);
-        roomsService.saveRoom(room);
-        return message;
+        Message savedMessage = messageRepository.save(message);
+        return roomsService.mapToMessageDTO(savedMessage);
     }
 }

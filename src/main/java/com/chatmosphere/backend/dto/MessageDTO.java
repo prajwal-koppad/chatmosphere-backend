@@ -1,32 +1,20 @@
-package com.chatmosphere.backend.documents;
+package com.chatmosphere.backend.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 
-@Document(collection = "messages")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class Message {
-
-    @Id
+public class MessageDTO {
     private String id;
-
-    @Indexed
     private String roomId;
-
     private String senderId;
-
     private String content;
-
-    @Indexed
     private LocalDateTime sentAt;
 }
