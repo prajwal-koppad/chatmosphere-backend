@@ -19,8 +19,15 @@ public class JwtUtils {
     @Value("${jwt.expiration}")
     private long jwtExpirationMs;
 
+    private SecretKey signingKey;
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        this.signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+    }
+
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        return signingKey;
     }
 
     public String generateToken(String username) {

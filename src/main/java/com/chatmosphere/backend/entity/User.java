@@ -23,4 +23,14 @@ public class User extends Audit {
     private String displayName;
 
     private String avatarUrl;
+
+    @Column(unique = true, nullable = false)
+    private String mobileNumber;
+
+    @Column(unique = true, nullable = false)
+    private String email;
+
+    private String otp;
+
+    private java.time.LocalDateTime otpExpiry;
 }

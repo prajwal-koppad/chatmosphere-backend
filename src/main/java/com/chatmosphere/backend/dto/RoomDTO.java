@@ -19,4 +19,7 @@ public class RoomDTO {
     private LocalDateTime createDate;
     private String updatedBy;
     private LocalDateTime updateDate;
+    private boolean isGroup;
+    private java.util.Set<String> participants;
+    private UserDTO recipient;
 }

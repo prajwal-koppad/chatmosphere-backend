@@ -22,4 +22,6 @@ public class CreateRoomRequestVO {
     @NotBlank(message = "Room Name cannot be empty")
     @Size(min = 3, max = 100, message = "Room Name must be between 3 and 100 characters")
     private String roomName;
+
+    private java.util.Set<String> participantUsernames = new java.util.HashSet<>();
 }

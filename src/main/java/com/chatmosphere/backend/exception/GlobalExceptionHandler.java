@@ -20,7 +20,8 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new HashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("status", ex.getStatusCode().value());
-        body.put("error", ((HttpStatus) ex.getStatusCode()).getReasonPhrase());
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        body.put("error", status != null ? status.getReasonPhrase() : "Error");
         body.put("message", ex.getReason());
         return new ResponseEntity<>(body, ex.getStatusCode());
     }
@@ -31,13 +32,21 @@ public class GlobalExceptionHandler {
         body.put("timestamp", LocalDateTime.now());
         body.put("status", HttpStatus.BAD_REQUEST.value());
         body.put("error", "Bad Request");
-        body.put("message", "Validation failed");
+        
+        // Extract the first validation error message to serve as the main message
+        String primaryMessage = ex.getBindingResult().getAllErrors().stream()
+                .findFirst()
+                .map(org.springframework.validation.ObjectError::getDefaultMessage)
+                .orElse("Validation failed");
+        body.put("message", primaryMessage);
 
         Map<String, String> errors = new HashMap<>();
         ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
+            if (error instanceof FieldError) {
+                String fieldName = ((FieldError) error).getField();
+                String errorMessage = error.getDefaultMessage();
+                errors.put(fieldName, errorMessage);
+            }
         });
         body.put("details", errors);
 

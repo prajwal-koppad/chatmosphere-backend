@@ -19,6 +19,10 @@ public class Room extends Audit {
     private String roomId;
 
     private String roomName;
+
+    private boolean isGroup = true;
+
+    private java.util.Set<String> participants = new java.util.HashSet<>();
 }
 
 

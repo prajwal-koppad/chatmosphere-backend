@@ -15,14 +15,24 @@ public class PresenceService {
 
     private final SimpMessagingTemplate messagingTemplate;
 
-    // Map of roomId -> Set of active usernames
+    // In-memory registry mapping: roomId -> Set of active usernames in that room
     private final Map<String, Set<String>> roomUsers = new ConcurrentHashMap<>();
 
+    // =========================================================================
+    // Public Operations
+    // =========================================================================
+
+    /**
+     * Adds a user to the online list of a room and broadcasts the update.
+     */
     public void userJoined(String roomId, String username) {
         roomUsers.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(username);
         broadcastPresence(roomId);
     }
 
+    /**
+     * Removes a user from the online list of a room and broadcasts the update.
+     */
     public void userLeft(String roomId, String username) {
         Set<String> users = roomUsers.get(roomId);
         if (users != null) {
@@ -34,6 +44,9 @@ public class PresenceService {
         broadcastPresence(roomId);
     }
 
+    /**
+     * Iterates all rooms and removes a disconnected user.
+     */
     public void removeUserFromAllRooms(String username) {
         roomUsers.forEach((roomId, users) -> {
             if (users.contains(username)) {
@@ -42,9 +55,16 @@ public class PresenceService {
         });
     }
 
+    /**
+     * Retrieves the set of currently online users in a room.
+     */
     public Set<String> getOnlineUsers(String roomId) {
         return roomUsers.getOrDefault(roomId, Collections.emptySet());
     }
+
+    // =========================================================================
+    // Private Helpers
+    // =========================================================================
 
     private void broadcastPresence(String roomId) {
         Set<String> onlineUsers = getOnlineUsers(roomId);

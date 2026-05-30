@@ -22,4 +22,11 @@ public class SignupRequestVO {
     private String displayName;
 
     private String avatarUrl;
+
+    @NotBlank(message = "Mobile number cannot be empty")
+    private String mobileNumber;
+
+    @NotBlank(message = "Email cannot be empty")
+    @jakarta.validation.constraints.Email(message = "Invalid email format")
+    private String email;
 }

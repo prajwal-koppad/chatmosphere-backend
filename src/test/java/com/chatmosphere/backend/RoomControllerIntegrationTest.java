@@ -1,10 +1,9 @@
 package com.chatmosphere.backend;
 
 import com.chatmosphere.backend.dto.RoomDTO;
-import com.chatmosphere.backend.vo.AuthResponseVO;
-import com.chatmosphere.backend.vo.CreateRoomRequestVO;
-import com.chatmosphere.backend.vo.LoginRequestVO;
-import com.chatmosphere.backend.vo.SignupRequestVO;
+import com.chatmosphere.backend.entity.User;
+import com.chatmosphere.backend.repository.UserRepository;
+import com.chatmosphere.backend.vo.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +16,8 @@ import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -53,6 +54,9 @@ public class RoomControllerIntegrationTest {
     @Autowired
     private TestRestTemplate restTemplate;
 
+    @Autowired
+    private UserRepository userRepository;
+
     @Test
     public void testAuthAndRoomCreationFlow() {
         // 1. Signup a user
@@ -61,22 +65,55 @@ public class RoomControllerIntegrationTest {
         signup.setPassword("password123");
         signup.setDisplayName("Test User");
         signup.setAvatarUrl("avatar.png");
+        signup.setMobileNumber("919876543210");
+        signup.setEmail("testuser@gmail.com");
 
-        ResponseEntity<AuthResponseVO> signupResponse = restTemplate.postForEntity(
-                "/api/v1/auth/signup", signup, AuthResponseVO.class);
+        ResponseEntity<Map> signupResponse = restTemplate.postForEntity(
+                "/api/v1/auth/signup", signup, Map.class);
         assertEquals(HttpStatus.CREATED, signupResponse.getStatusCode());
         assertNotNull(signupResponse.getBody());
-        assertNotNull(signupResponse.getBody().getToken());
+        assertEquals("OTP_SENT", signupResponse.getBody().get("status"));
 
-        // 2. Login the user
+        // Retrieve generated OTP from DB for signup verification
+        User initialUser = userRepository.findByUsername("testuser").orElseThrow();
+        String signupOtp = initialUser.getOtp();
+        assertNotNull(signupOtp);
+
+        // Verify signup OTP
+        VerifyOtpRequestVO verifySignupOtp = new VerifyOtpRequestVO();
+        verifySignupOtp.setUsername("testuser");
+        verifySignupOtp.setOtp(signupOtp);
+
+        ResponseEntity<AuthResponseVO> verifySignupResponse = restTemplate.postForEntity(
+                "/api/v1/auth/verify-otp", verifySignupOtp, AuthResponseVO.class);
+        assertEquals(HttpStatus.OK, verifySignupResponse.getStatusCode());
+        assertNotNull(verifySignupResponse.getBody().getToken());
+
+        // 2. Login the user (Step 1)
         LoginRequestVO login = new LoginRequestVO();
         login.setUsername("testuser");
         login.setPassword("password123");
 
-        ResponseEntity<AuthResponseVO> loginResponse = restTemplate.postForEntity(
-                "/api/v1/auth/login", login, AuthResponseVO.class);
+        ResponseEntity<Map> loginResponse = restTemplate.postForEntity(
+                "/api/v1/auth/login", login, Map.class);
         assertEquals(HttpStatus.OK, loginResponse.getStatusCode());
-        String jwtToken = loginResponse.getBody().getToken();
+        assertEquals("OTP_SENT", loginResponse.getBody().get("status"));
+
+        // Retrieve generated OTP from DB
+        User user = userRepository.findByUsername("testuser").orElseThrow();
+        String generatedOtp = user.getOtp();
+        assertNotNull(generatedOtp);
+
+        // Verify the OTP (Step 2)
+        VerifyOtpRequestVO verifyOtpRequest = new VerifyOtpRequestVO();
+        verifyOtpRequest.setUsername("testuser");
+        verifyOtpRequest.setOtp(generatedOtp);
+
+        ResponseEntity<AuthResponseVO> verifyResponse = restTemplate.postForEntity(
+                "/api/v1/auth/verify-otp", verifyOtpRequest, AuthResponseVO.class);
+        assertEquals(HttpStatus.OK, verifyResponse.getStatusCode());
+        String jwtToken = verifyResponse.getBody().getToken();
+        assertNotNull(jwtToken);
 
         // 3. Create a room (Authenticated)
         CreateRoomRequestVO createRoom = new CreateRoomRequestVO();
