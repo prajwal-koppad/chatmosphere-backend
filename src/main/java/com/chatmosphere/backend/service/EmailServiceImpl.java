@@ -59,7 +59,7 @@ public class EmailServiceImpl implements EmailService {
     public void sendOtp(String email, String otp) {
         String subject = "Chatmosphere - Your OTP Verification Code";
         String body = String.format(
-                "Hello,\n\nYour OTP verification code is: %s\n\nThis code will expire in 5 minutes.\n\nThank you,\nChatmosphere Team",
+                "Hello,\n\nYour OTP verification code is: %s\n\nThis code will expire in 10 minutes.\n\nThank you,\nChatmosphere Team",
                 otp
         );
 
@@ -71,7 +71,7 @@ public class EmailServiceImpl implements EmailService {
         if (StringUtils.hasText(resendApiKey)) {
             try {
                 log.info("Attempting to send OTP via Resend HTTP API to {}...", email);
-                sendEmailViaResend(email, subject, body);
+                sendEmailViaResend(email, subject, body, null);
                 saveEmailLog(email, subject, body, "SENT (RESEND)", null);
                 return;
             } catch (Exception e) {
@@ -98,6 +98,69 @@ public class EmailServiceImpl implements EmailService {
         executeConsoleFallback(email, subject, body, otp, "FAILED", reason);
     }
 
+    /**
+     * Sends a registration verification link.
+     */
+    @Override
+    public void sendVerificationLink(String email, String link) {
+        String subject = "Chatmosphere - Verify Your Email Address";
+        String textBody = "Hello,\n\nPlease verify your email address by opening the following link in your browser:\n" + link + "\n\nThis link will expire in 15 minutes.\n\nThank you,\nChatmosphere Team";
+        String htmlBody = String.format(
+                "<div style=\"font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 550px; margin: 0 auto; padding: 30px; background: #0f172a; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; color: #f8fafc; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);\">" +
+                "  <h2 style=\"margin-top: 0; color: #ff9800; font-size: 24px; font-weight: 700; letter-spacing: 0.5px;\">Verify Your Email Address</h2>" +
+                "  <p style=\"font-size: 15px; line-height: 1.6; color: #cbd5e1; margin-bottom: 25px;\">Thank you for joining Chatmosphere. Please verify your email to unlock your registration.</p>" +
+                "  <div style=\"margin: 30px 0;\">" +
+                "    <a href=\"%s\" style=\"background: linear-gradient(135deg, #6366f1 0%%, #4f46e5 100%%); color: #ffffff; padding: 12px 30px; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 10px; display: inline-block; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);\">Verify Email Address</a>" +
+                "  </div>" +
+                "  <p style=\"font-size: 12px; color: #94a3b8; line-height: 1.5; margin-top: 25px;\">If the button above does not work, copy and paste the URL below into your browser:<br/>" +
+                "  <a href=\"%s\" style=\"color: #6366f1; text-decoration: underline; word-break: break-all;\">%s</a></p>" +
+                "  <hr style=\"border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 25px 0;\"/>" +
+                "  <p style=\"font-size: 11px; color: #64748b;\">This link is valid for 15 minutes. If you did not request this, you can safely ignore this email.</p>" +
+                "</div>",
+                link, link, link
+        );
+
+        log.info("========================================");
+        log.info("Generating verification link for email: {}", email);
+        log.info("========================================");
+
+        // 1. Try Resend HTTP API
+        if (StringUtils.hasText(resendApiKey)) {
+            try {
+                log.info("Attempting to send verification link via Resend HTTP API to {}...", email);
+                sendEmailViaResend(email, subject, textBody, htmlBody);
+                saveEmailLog(email, subject, textBody, "SENT (RESEND_LINK)", null);
+                return;
+            } catch (Exception e) {
+                log.error("Failed to send verification link via Resend API: {}. Checking fallbacks...", e.getMessage());
+            }
+        }
+
+        // 2. Try SMTP
+        if (StringUtils.hasText(mailUsername)) {
+            try {
+                log.info("Attempting to send verification link via SMTP to {}...", email);
+                sendHtmlEmailViaSmtp(email, subject, textBody, htmlBody);
+                saveEmailLog(email, subject, textBody, "SENT (SMTP_LINK)", null);
+                return;
+            } catch (Exception e) {
+                log.error("Failed to send verification link via SMTP: {}. Falling back to Console Logging.", e.getMessage());
+            }
+        }
+
+        // 3. Fallback to console print
+        String reason = !StringUtils.hasText(resendApiKey) && !StringUtils.hasText(mailUsername)
+                ? "Neither Resend nor SMTP is configured."
+                : "Both Resend and SMTP attempts failed.";
+        log.warn("============================================================");
+        log.warn(">>> MOCK EMAIL VERIFICATION LINK DELIVERY");
+        log.warn(">>> Recipient : {}", email);
+        log.warn(">>> Link      : {}", link);
+        log.warn("============================================================");
+        System.out.println("\n[CHATMOSPHERE VERIFICATION LINK] " + email + " → " + link + "\n");
+        saveEmailLog(email, subject, textBody, "FAILED (MOCK_LINK)", reason);
+    }
+
     // =========================================================================
     // Private Helpers
     // =========================================================================
@@ -105,12 +168,17 @@ public class EmailServiceImpl implements EmailService {
     /**
      * Sends an email via the Resend REST API using java.net.http.HttpClient.
      */
-    private void sendEmailViaResend(String email, String subject, String body) throws Exception {
+    private void sendEmailViaResend(String email, String subject, String textBody, String htmlBody) throws Exception {
         Map<String, Object> payload = new HashMap<>();
         payload.put("from", resendFromEmail);
         payload.put("to", Collections.singletonList(email));
         payload.put("subject", subject);
-        payload.put("text", body);
+        if (textBody != null) {
+            payload.put("text", textBody);
+        }
+        if (htmlBody != null) {
+            payload.put("html", htmlBody);
+        }
 
         String jsonPayload = objectMapper.writeValueAsString(payload);
 
@@ -128,7 +196,7 @@ public class EmailServiceImpl implements EmailService {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new RuntimeException("Resend API returned non-success status code: " + response.statusCode() + ", body: " + response.body());
         }
-        log.info("OTP email successfully transmitted to {} via Resend API", email);
+        log.info("Email successfully transmitted to {} via Resend API", email);
     }
 
     /**
@@ -143,6 +211,22 @@ public class EmailServiceImpl implements EmailService {
 
         mailSender.send(message);
         log.info("OTP email successfully transmitted to {} via SMTP", email);
+    }
+
+    /**
+     * Sends an HTML email via SMTP using MimeMessageHelper.
+     */
+    private void sendHtmlEmailViaSmtp(String email, String subject, String textBody, String htmlBody) throws Exception {
+        jakarta.mail.internet.MimeMessage mimeMessage = mailSender.createMimeMessage();
+        org.springframework.mail.javamail.MimeMessageHelper helper =
+                new org.springframework.mail.javamail.MimeMessageHelper(mimeMessage, true, "UTF-8");
+        helper.setFrom(mailUsername);
+        helper.setTo(email);
+        helper.setSubject(subject);
+        helper.setText(textBody, htmlBody);
+
+        mailSender.send(mimeMessage);
+        log.info("HTML email successfully transmitted to {} via SMTP", email);
     }
 
     /**
