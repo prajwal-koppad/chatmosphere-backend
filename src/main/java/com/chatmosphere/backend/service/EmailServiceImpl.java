@@ -34,14 +34,20 @@ public class EmailServiceImpl implements EmailService {
     @Value("${spring.mail.username:}")
     private String mailUsername;
 
-    @Value("${resend.api.key:}")
-    private String resendApiKey;
+    @Value("${emailjs.service.id:}")
+    private String emailJsServiceId;
 
-    @Value("${resend.from.email:onboarding@resend.dev}")
-    private String resendFromEmail;
+    @Value("${emailjs.template.id:}")
+    private String emailJsTemplateId;
 
-    @Value("${resend.api.url:https://api.resend.com/emails}")
-    private String resendApiUrl;
+    @Value("${emailjs.public.key:}")
+    private String emailJsPublicKey;
+
+    @Value("${emailjs.private.key:}")
+    private String emailJsPrivateKey;
+
+    @Value("${emailjs.api.url:https://api.emailjs.com/api/v1.0/email/send}")
+    private String emailJsApiUrl;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -95,18 +101,18 @@ public class EmailServiceImpl implements EmailService {
     // =========================================================================
 
     /**
-     * Tries sending via Resend API, falls back to SMTP, and finally falls back to console.
+     * Tries sending via EmailJS API, falls back to SMTP, and finally falls back to console.
      */
     private void send(String email, String subject, String textBody, String htmlBody, String type, String consoleValue) {
-        // 1. Resend API
-        if (StringUtils.hasText(resendApiKey)) {
+        // 1. EmailJS API
+        if (StringUtils.hasText(emailJsServiceId) && StringUtils.hasText(emailJsTemplateId) && StringUtils.hasText(emailJsPublicKey)) {
             try {
-                log.info("Attempting delivery of {} via Resend HTTP API to {}...", type, email);
-                sendEmailViaResend(email, subject, textBody, htmlBody);
-                saveEmailLog(email, subject, textBody, "SENT (RESEND_" + type.replace(" ", "_") + ")", null);
+                log.info("Attempting delivery of {} via EmailJS HTTP API to {}...", type, email);
+                sendEmailViaEmailJs(email, subject, textBody, htmlBody);
+                saveEmailLog(email, subject, textBody, "SENT (EMAILJS_" + type.replace(" ", "_") + ")", null);
                 return;
             } catch (Exception e) {
-                log.error("Resend HTTP API delivery failed: {}", e.getMessage());
+                log.error("EmailJS HTTP API delivery failed: {}", e.getMessage());
             }
         }
 
@@ -127,9 +133,9 @@ public class EmailServiceImpl implements EmailService {
         }
 
         // 3. Console Fallback
-        String reason = !StringUtils.hasText(resendApiKey) && !StringUtils.hasText(mailUsername)
-                ? "Neither Resend nor SMTP is configured."
-                : "Active delivery channels (Resend & SMTP) failed.";
+        String reason = !StringUtils.hasText(emailJsServiceId) && !StringUtils.hasText(mailUsername)
+                ? "Neither EmailJS nor SMTP is configured."
+                : "Active delivery channels (EmailJS & SMTP) failed.";
         executeConsoleFallback(email, subject, textBody, type, consoleValue, "FAILED", reason);
     }
 
@@ -138,21 +144,28 @@ public class EmailServiceImpl implements EmailService {
     // =========================================================================
 
     /**
-     * Sends an email via the Resend REST API using HttpClient.
+     * Sends an email via the EmailJS REST API using HttpClient.
      */
-    private void sendEmailViaResend(String email, String subject, String textBody, String htmlBody) throws Exception {
+    private void sendEmailViaEmailJs(String email, String subject, String textBody, String htmlBody) throws Exception {
         Map<String, Object> payload = new HashMap<>();
-        payload.put("from", resendFromEmail);
-        payload.put("to", Collections.singletonList(email));
-        payload.put("subject", subject);
-        if (textBody != null) payload.put("text", textBody);
-        if (htmlBody != null) payload.put("html", htmlBody);
+        payload.put("service_id", emailJsServiceId);
+        payload.put("template_id", emailJsTemplateId);
+        payload.put("user_id", emailJsPublicKey);
+        if (StringUtils.hasText(emailJsPrivateKey)) {
+            payload.put("accessToken", emailJsPrivateKey);
+        }
+
+        Map<String, Object> templateParams = new HashMap<>();
+        templateParams.put("to_email", email);
+        templateParams.put("subject", subject);
+        templateParams.put("text_body", textBody);
+        templateParams.put("html_body", htmlBody != null ? htmlBody : textBody);
+        payload.put("template_params", templateParams);
 
         String jsonPayload = objectMapper.writeValueAsString(payload);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(resendApiUrl))
-                .header("Authorization", "Bearer " + resendApiKey)
+                .uri(URI.create(emailJsApiUrl))
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofSeconds(5))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
@@ -163,8 +176,10 @@ public class EmailServiceImpl implements EmailService {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new RuntimeException("HTTP Status " + response.statusCode() + ": " + response.body());
         }
-        log.info("Email delivered successfully via Resend API");
+        log.info("Email delivered successfully via EmailJS API");
     }
+
+
 
     /**
      * Transmits a simple SMTP message.
