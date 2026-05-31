@@ -2,6 +2,7 @@ package com.chatmosphere.backend.service;
 
 import com.chatmosphere.backend.documents.EmailLog;
 import com.chatmosphere.backend.repository.EmailLogRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,8 +11,16 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -20,16 +29,28 @@ public class EmailServiceImpl implements EmailService {
 
     private final JavaMailSender mailSender;
     private final EmailLogRepository emailLogRepository;
+    private final ObjectMapper objectMapper;
 
     @Value("${spring.mail.username:}")
     private String mailUsername;
+
+    @Value("${resend.api.key:}")
+    private String resendApiKey;
+
+    @Value("${resend.from.email:onboarding@resend.dev}")
+    private String resendFromEmail;
+
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
 
     // =========================================================================
     // Public Operations
     // =========================================================================
 
     /**
-     * Sends an OTP verification email to the user, with local fallback if SMTP is unconfigured.
+     * Sends an OTP verification email to the user.
+     * Uses Resend HTTP API as primary if configured, falls back to SMTP, and finally console mock.
      */
     @Override
     public void sendOtp(String email, String otp) {
@@ -43,25 +64,69 @@ public class EmailServiceImpl implements EmailService {
         log.info("Generating OTP code: {} for email: {}", otp, email);
         log.info("========================================");
 
-        // Fallback to console print if SMTP username is missing
-        if (!StringUtils.hasText(mailUsername)) {
-            log.warn("SMTP credentials (spring.mail.username) missing! Falling back to Console Logging.");
-            executeConsoleFallback(email, subject, body, otp, "SENT (MOCK)", null);
-            return;
+        // 1. Try Resend HTTP API
+        if (StringUtils.hasText(resendApiKey)) {
+            try {
+                log.info("Attempting to send OTP via Resend HTTP API to {}...", email);
+                sendEmailViaResend(email, subject, body);
+                saveEmailLog(email, subject, body, "SENT (RESEND)", null);
+                return;
+            } catch (Exception e) {
+                log.error("Failed to send OTP via Resend API: {}. Checking fallbacks...", e.getMessage());
+            }
         }
 
-        try {
-            sendEmailViaSmtp(email, subject, body);
-            saveEmailLog(email, subject, body, "SENT", null);
-        } catch (Exception e) {
-            log.error("Failed to send OTP via SMTP: {}. Falling back to Console Logging.", e.getMessage());
-            executeConsoleFallback(email, subject, body, otp, "FAILED", e.getMessage());
+        // 2. Try SMTP
+        if (StringUtils.hasText(mailUsername)) {
+            try {
+                log.info("Attempting to send OTP via SMTP to {}...", email);
+                sendEmailViaSmtp(email, subject, body);
+                saveEmailLog(email, subject, body, "SENT (SMTP)", null);
+                return;
+            } catch (Exception e) {
+                log.error("Failed to send OTP via SMTP: {}. Falling back to Console Logging.", e.getMessage());
+            }
         }
+
+        // 3. Fallback to console print
+        String reason = !StringUtils.hasText(resendApiKey) && !StringUtils.hasText(mailUsername)
+                ? "Neither Resend nor SMTP is configured."
+                : "Both Resend and SMTP attempts failed.";
+        executeConsoleFallback(email, subject, body, otp, "FAILED", reason);
     }
 
     // =========================================================================
     // Private Helpers
     // =========================================================================
+
+    /**
+     * Sends an email via the Resend REST API using java.net.http.HttpClient.
+     */
+    private void sendEmailViaResend(String email, String subject, String body) throws Exception {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("from", resendFromEmail);
+        payload.put("to", Collections.singletonList(email));
+        payload.put("subject", subject);
+        payload.put("text", body);
+
+        String jsonPayload = objectMapper.writeValueAsString(payload);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.resend.com/emails"))
+                .header("Authorization", "Bearer " + resendApiKey)
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(5))
+                .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        log.info("Resend API response status code: {}", response.statusCode());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new RuntimeException("Resend API returned non-success status code: " + response.statusCode() + ", body: " + response.body());
+        }
+        log.info("OTP email successfully transmitted to {} via Resend API", email);
+    }
 
     /**
      * Constructs and transmits a simple SMTP message.
@@ -74,7 +139,7 @@ public class EmailServiceImpl implements EmailService {
         message.setText(body);
 
         mailSender.send(message);
-        log.info("OTP email successfully transmitted to {}", email);
+        log.info("OTP email successfully transmitted to {} via SMTP", email);
     }
 
     /**
@@ -82,7 +147,7 @@ public class EmailServiceImpl implements EmailService {
      */
     private void executeConsoleFallback(String email, String subject, String body, String otp, String status, String errorMessage) {
         log.warn("============================================================");
-        log.warn(">>> MOCK OTP DELIVERY — SMTP unavailable");
+        log.warn(">>> MOCK OTP DELIVERY — Active delivery channels failed or unavailable");
         log.warn(">>> Recipient : {}", email);
         log.warn(">>> OTP Code  : {}", otp);
         log.warn(">>> Status    : {}", status);
