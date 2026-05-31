@@ -40,6 +40,9 @@ public class EmailServiceImpl implements EmailService {
     @Value("${resend.from.email:onboarding@resend.dev}")
     private String resendFromEmail;
 
+    @Value("${resend.api.url:https://api.resend.com/emails}")
+    private String resendApiUrl;
+
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -112,7 +115,7 @@ public class EmailServiceImpl implements EmailService {
         String jsonPayload = objectMapper.writeValueAsString(payload);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.resend.com/emails"))
+                .uri(URI.create(resendApiUrl))
                 .header("Authorization", "Bearer " + resendApiKey)
                 .header("Content-Type", "application/json")
                 .timeout(Duration.ofSeconds(5))
