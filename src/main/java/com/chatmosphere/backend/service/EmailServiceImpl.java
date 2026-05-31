@@ -53,7 +53,6 @@ public class EmailServiceImpl implements EmailService {
 
     /**
      * Sends an OTP verification email to the user.
-     * Uses Resend HTTP API as primary if configured, falls back to SMTP, and finally console mock.
      */
     @Override
     public void sendOtp(String email, String otp) {
@@ -62,40 +61,8 @@ public class EmailServiceImpl implements EmailService {
                 "Hello,\n\nYour OTP verification code is: %s\n\nThis code will expire in 10 minutes.\n\nThank you,\nChatmosphere Team",
                 otp
         );
-
-        log.info("========================================");
-        log.info("Generating OTP code: {} for email: {}", otp, email);
-        log.info("========================================");
-
-        // 1. Try Resend HTTP API
-        if (StringUtils.hasText(resendApiKey)) {
-            try {
-                log.info("Attempting to send OTP via Resend HTTP API to {}...", email);
-                sendEmailViaResend(email, subject, body, null);
-                saveEmailLog(email, subject, body, "SENT (RESEND)", null);
-                return;
-            } catch (Exception e) {
-                log.error("Failed to send OTP via Resend API: {}. Checking fallbacks...", e.getMessage());
-            }
-        }
-
-        // 2. Try SMTP
-        if (StringUtils.hasText(mailUsername)) {
-            try {
-                log.info("Attempting to send OTP via SMTP to {}...", email);
-                sendEmailViaSmtp(email, subject, body);
-                saveEmailLog(email, subject, body, "SENT (SMTP)", null);
-                return;
-            } catch (Exception e) {
-                log.error("Failed to send OTP via SMTP: {}. Falling back to Console Logging.", e.getMessage());
-            }
-        }
-
-        // 3. Fallback to console print
-        String reason = !StringUtils.hasText(resendApiKey) && !StringUtils.hasText(mailUsername)
-                ? "Neither Resend nor SMTP is configured."
-                : "Both Resend and SMTP attempts failed.";
-        executeConsoleFallback(email, subject, body, otp, "FAILED", reason);
+        log.info("Generating OTP code for email: {}", email);
+        send(email, subject, body, null, "OTP", otp);
     }
 
     /**
@@ -119,46 +86,51 @@ public class EmailServiceImpl implements EmailService {
                 "</div>",
                 link, link, link
         );
-
-        log.info("========================================");
         log.info("Generating verification link for email: {}", email);
-        log.info("========================================");
+        send(email, subject, textBody, htmlBody, "VERIFICATION LINK", link);
+    }
 
-        // 1. Try Resend HTTP API
+    // =========================================================================
+    // Core Email Router
+    // =========================================================================
+
+    /**
+     * Tries sending via Resend API, falls back to SMTP, and finally falls back to console.
+     */
+    private void send(String email, String subject, String textBody, String htmlBody, String type, String consoleValue) {
+        // 1. Resend API
         if (StringUtils.hasText(resendApiKey)) {
             try {
-                log.info("Attempting to send verification link via Resend HTTP API to {}...", email);
+                log.info("Attempting delivery of {} via Resend HTTP API to {}...", type, email);
                 sendEmailViaResend(email, subject, textBody, htmlBody);
-                saveEmailLog(email, subject, textBody, "SENT (RESEND_LINK)", null);
+                saveEmailLog(email, subject, textBody, "SENT (RESEND_" + type.replace(" ", "_") + ")", null);
                 return;
             } catch (Exception e) {
-                log.error("Failed to send verification link via Resend API: {}. Checking fallbacks...", e.getMessage());
+                log.error("Resend HTTP API delivery failed: {}", e.getMessage());
             }
         }
 
-        // 2. Try SMTP
+        // 2. SMTP
         if (StringUtils.hasText(mailUsername)) {
             try {
-                log.info("Attempting to send verification link via SMTP to {}...", email);
-                sendHtmlEmailViaSmtp(email, subject, textBody, htmlBody);
-                saveEmailLog(email, subject, textBody, "SENT (SMTP_LINK)", null);
+                log.info("Attempting delivery of {} via SMTP to {}...", type, email);
+                if (htmlBody != null) {
+                    sendHtmlEmailViaSmtp(email, subject, textBody, htmlBody);
+                } else {
+                    sendEmailViaSmtp(email, subject, textBody);
+                }
+                saveEmailLog(email, subject, textBody, "SENT (SMTP_" + type.replace(" ", "_") + ")", null);
                 return;
             } catch (Exception e) {
-                log.error("Failed to send verification link via SMTP: {}. Falling back to Console Logging.", e.getMessage());
+                log.error("SMTP delivery failed: {}", e.getMessage());
             }
         }
 
-        // 3. Fallback to console print
+        // 3. Console Fallback
         String reason = !StringUtils.hasText(resendApiKey) && !StringUtils.hasText(mailUsername)
                 ? "Neither Resend nor SMTP is configured."
-                : "Both Resend and SMTP attempts failed.";
-        log.warn("============================================================");
-        log.warn(">>> MOCK EMAIL VERIFICATION LINK DELIVERY");
-        log.warn(">>> Recipient : {}", email);
-        log.warn(">>> Link      : {}", link);
-        log.warn("============================================================");
-        System.out.println("\n[CHATMOSPHERE VERIFICATION LINK] " + email + " → " + link + "\n");
-        saveEmailLog(email, subject, textBody, "FAILED (MOCK_LINK)", reason);
+                : "Active delivery channels (Resend & SMTP) failed.";
+        executeConsoleFallback(email, subject, textBody, type, consoleValue, "FAILED", reason);
     }
 
     // =========================================================================
@@ -166,19 +138,15 @@ public class EmailServiceImpl implements EmailService {
     // =========================================================================
 
     /**
-     * Sends an email via the Resend REST API using java.net.http.HttpClient.
+     * Sends an email via the Resend REST API using HttpClient.
      */
     private void sendEmailViaResend(String email, String subject, String textBody, String htmlBody) throws Exception {
         Map<String, Object> payload = new HashMap<>();
         payload.put("from", resendFromEmail);
         payload.put("to", Collections.singletonList(email));
         payload.put("subject", subject);
-        if (textBody != null) {
-            payload.put("text", textBody);
-        }
-        if (htmlBody != null) {
-            payload.put("html", htmlBody);
-        }
+        if (textBody != null) payload.put("text", textBody);
+        if (htmlBody != null) payload.put("html", htmlBody);
 
         String jsonPayload = objectMapper.writeValueAsString(payload);
 
@@ -192,15 +160,14 @@ public class EmailServiceImpl implements EmailService {
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        log.info("Resend API response status code: {}", response.statusCode());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new RuntimeException("Resend API returned non-success status code: " + response.statusCode() + ", body: " + response.body());
+            throw new RuntimeException("HTTP Status " + response.statusCode() + ": " + response.body());
         }
-        log.info("Email successfully transmitted to {} via Resend API", email);
+        log.info("Email delivered successfully via Resend API");
     }
 
     /**
-     * Constructs and transmits a simple SMTP message.
+     * Transmits a simple SMTP message.
      */
     private void sendEmailViaSmtp(String email, String subject, String body) {
         SimpleMailMessage message = new SimpleMailMessage();
@@ -208,9 +175,8 @@ public class EmailServiceImpl implements EmailService {
         message.setTo(email);
         message.setSubject(subject);
         message.setText(body);
-
         mailSender.send(message);
-        log.info("OTP email successfully transmitted to {} via SMTP", email);
+        log.info("Email delivered successfully via SMTP");
     }
 
     /**
@@ -224,23 +190,22 @@ public class EmailServiceImpl implements EmailService {
         helper.setTo(email);
         helper.setSubject(subject);
         helper.setText(textBody, htmlBody);
-
         mailSender.send(mimeMessage);
-        log.info("HTML email successfully transmitted to {} via SMTP", email);
+        log.info("HTML email delivered successfully via SMTP");
     }
 
     /**
-     * Outputs OTP details to System.out and logs the event.
+     * Outputs email details to Console and logs the fallback event to Mongo.
      */
-    private void executeConsoleFallback(String email, String subject, String body, String otp, String status, String errorMessage) {
+    private void executeConsoleFallback(String email, String subject, String body, String type, String value, String status, String errorMessage) {
         log.warn("============================================================");
-        log.warn(">>> MOCK OTP DELIVERY — Active delivery channels failed or unavailable");
+        log.warn(">>> MOCK {} DELIVERY — Active delivery channels unavailable", type);
         log.warn(">>> Recipient : {}", email);
-        log.warn(">>> OTP Code  : {}", otp);
+        log.warn(">>> Value     : {}", value);
         log.warn(">>> Status    : {}", status);
         if (errorMessage != null) log.warn(">>> Reason    : {}", errorMessage);
         log.warn("============================================================");
-        System.out.println("\n[CHATMOSPHERE OTP] " + email + " → " + otp + "\n");
+        System.out.println("\n[CHATMOSPHERE " + type.toUpperCase() + "] " + email + " → " + value + "\n");
         saveEmailLog(email, subject, body, status, errorMessage);
     }
 
@@ -263,3 +228,4 @@ public class EmailServiceImpl implements EmailService {
         }
     }
 }
+
