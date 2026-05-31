@@ -81,7 +81,14 @@ public class EmailServiceImpl implements EmailService {
      * Outputs OTP details to System.out and logs the event.
      */
     private void executeConsoleFallback(String email, String subject, String body, String otp, String status, String errorMessage) {
-        System.out.println(">>> MOCK EMAIL OTP to " + email + ": Your Chatmosphere verification code is " + otp);
+        log.warn("============================================================");
+        log.warn(">>> MOCK OTP DELIVERY — SMTP unavailable");
+        log.warn(">>> Recipient : {}", email);
+        log.warn(">>> OTP Code  : {}", otp);
+        log.warn(">>> Status    : {}", status);
+        if (errorMessage != null) log.warn(">>> Reason    : {}", errorMessage);
+        log.warn("============================================================");
+        System.out.println("\n[CHATMOSPHERE OTP] " + email + " → " + otp + "\n");
         saveEmailLog(email, subject, body, status, errorMessage);
     }
 
