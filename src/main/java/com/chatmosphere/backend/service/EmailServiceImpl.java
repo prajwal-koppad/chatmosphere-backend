@@ -50,7 +50,7 @@ public class EmailServiceImpl implements EmailService {
     private String emailJsApiUrl;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
+            .connectTimeout(Duration.ofSeconds(15))
             .build();
 
     // =========================================================================
@@ -167,16 +167,38 @@ public class EmailServiceImpl implements EmailService {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(emailJsApiUrl))
                 .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(5))
+                .timeout(Duration.ofSeconds(15))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        int maxAttempts = 3;
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                log.info("EmailJS HTTP API send attempt {} of {}...", attempt, maxAttempts);
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new RuntimeException("HTTP Status " + response.statusCode() + ": " + response.body());
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw new RuntimeException("HTTP Status " + response.statusCode() + ": " + response.body());
+                }
+                log.info("Email delivered successfully via EmailJS API on attempt {}", attempt);
+                return;
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("EmailJS send attempt {} failed: {}", attempt, e.getMessage());
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw ie;
+                    }
+                }
+            }
         }
-        log.info("Email delivered successfully via EmailJS API");
+        if (lastException != null) {
+            throw lastException;
+        }
     }
 
 
